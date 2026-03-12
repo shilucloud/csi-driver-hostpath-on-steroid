@@ -13,7 +13,7 @@ func main() {
 	var (
 		endpoint = flag.String("endpoint", "unix:///var/run/csi.sock", "Set the Unix Domain Socket Path")
 		mode     = flag.String("mode", "controller", "Used to define whether this is controller component or node component")
-		name     = flag.String("name", "csi-driver-hostpath-on-steriod", "Name of the CSI Driver")
+		name     = flag.String("name", "csi.driver.hostpath.on.steriod", "Name of the CSI Driver")
 	)
 	flag.Parse()
 

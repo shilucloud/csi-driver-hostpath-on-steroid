@@ -1,0 +1,35 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hostpath-on-steriod-cr
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumes
+    verbs:
+      - watch
+      - list
+  - apiGroups:
+      - ""
+    resources:
+      #      - persistentvolume
+      - nodes
+      - persistentvolumeclaims
+    verbs:
+      - watch
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      #- volumeattachments
+      - csinodes
+      - storageclasses
+    verbs:
+      - watch 
+  - apiGroups:
+      - storage.k8s.io
+    verbs:
+      - watch
+      - list
+    resources:
+      - volumeattachments
