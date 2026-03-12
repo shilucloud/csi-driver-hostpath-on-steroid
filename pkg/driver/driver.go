@@ -1,14 +1,23 @@
 package driver
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"net"
+
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/util"
+	"google.golang.org/grpc"
+)
 
 type Driver struct {
+	csi.UnimplementedIdentityServer
 	controller    *ControllerService
 	node          *NodeService
 	driverName    string
 	driverVersion string
 	options       Options
-	srv           string
+	srv           *grpc.Server
 	healthy       bool
 }
 
@@ -43,18 +52,34 @@ func NewDriver(options *Options) (*Driver, error) {
 
 func (d *Driver) Run() error {
 
-	switch d.options.Mode {
-	case ControllerMode:
-		fmt.Print("controller")
-
-	case NodeMode:
-		fmt.Print("controller")
-
-	default:
-		fmt.Print("ALL")
+	scheme, addr, err := util.ParseEndpoint(d.options.Endpoint)
+	if err != nil {
+		return err
 	}
 
-	return nil
+	listenConfig := net.ListenConfig{}
+	listener, err := listenConfig.Listen(context.Background(), scheme, addr)
+	if err != nil {
+		return err
+	}
+	fmt.Println(listener)
+
+	d.srv = grpc.NewServer()
+	csi.RegisterIdentityServer(d.srv, d)
+
+	switch d.options.Mode {
+	case ControllerMode:
+		csi.RegisterControllerServer(d.srv, d.controller)
+	case NodeMode:
+		csi.RegisterNodeServer(d.srv, d.node)
+	case AllMode:
+		csi.RegisterControllerServer(d.srv, d.controller)
+		csi.RegisterNodeServer(d.srv, d.node)
+	}
+
+	d.healthy = true
+
+	return d.srv.Serve(listener)
 
 }
 

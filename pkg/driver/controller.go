@@ -8,6 +8,7 @@ import (
 )
 
 type ControllerService struct {
+	csi.UnimplementedControllerServer
 }
 
 func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -28,6 +29,50 @@ func (cs *ControllerService) ControllerPublishVolume(ctx context.Context, req *c
 func (cs *ControllerService) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	fmt.Print("This is controllerunpubvol")
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
+}
+
+func (cs *ControllerService) ControllerExpandVolume(ctx context.Context, req *csi.ControllerExpandVolumeRequest) (*csi.ControllerExpandVolumeResponse, error) {
+	return nil, fmt.Errorf("ControllerExpandVolume not implemented")
+}
+
+func (cs *ControllerService) ControllerGetVolume(ctx context.Context, req *csi.ControllerGetVolumeRequest) (*csi.ControllerGetVolumeResponse, error) {
+	return nil, fmt.Errorf("ControllerGetVolume not implemented")
+}
+
+func (cs *ControllerService) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
+	return nil, fmt.Errorf("ListVolumes not implemented")
+}
+
+func (cs *ControllerService) ListVolumePages(ctx context.Context, req *csi.ListVolumesRequest, handler func(*csi.ListVolumesResponse) error) error {
+	return fmt.Errorf("ListVolumePages not implemented")
+}
+
+func (cs *ControllerService) GetCapacity(ctx context.Context, req *csi.GetCapacityRequest) (*csi.GetCapacityResponse, error) {
+	return nil, fmt.Errorf("GetCapacity not implemented")
+}
+
+func (cs *ControllerService) ControllerGetCapabilities(ctx context.Context, req *csi.ControllerGetCapabilitiesRequest) (*csi.ControllerGetCapabilitiesResponse, error) {
+	return nil, fmt.Errorf("ControllerGetCapabilities not implemented")
+}
+
+func (cs *ControllerService) ControllerModifyVolume(ctx context.Context, req *csi.ControllerModifyVolumeRequest) (*csi.ControllerModifyVolumeResponse, error) {
+	return nil, fmt.Errorf("ControllerModifyVolume not implemented")
+}
+
+func (cs *ControllerService) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
+	return nil, fmt.Errorf("CreateSnapshot not implemented")
+}
+
+func (cs *ControllerService) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {
+	return nil, fmt.Errorf("DeleteSnapshot not implemented")
+}
+
+func (cs *ControllerService) ListSnapshots(ctx context.Context, req *csi.ListSnapshotsRequest) (*csi.ListSnapshotsResponse, error) {
+	return nil, fmt.Errorf("ListSnapshots not implemented")
+}
+
+func (cs *ControllerService) GetSnapshot(ctx context.Context, req *csi.GetSnapshotRequest) (*csi.GetSnapshotResponse, error) {
+	return nil, fmt.Errorf("GetSnapshot not implemented")
 }
 
 func NewControllerService() *ControllerService {
