@@ -31,3 +31,16 @@ func ParseEndpoint(endpoint string) (string, string, error) {
 
 	return scheme, addr, nil
 }
+
+func GetHostName() string {
+	hostname, err := os.Hostname()
+	if err != nil {
+		hostname = "unknown"
+	}
+
+	return hostname
+}
+
+func GetNumberOfVolumesPerNode() int64 {
+	return 25
+}

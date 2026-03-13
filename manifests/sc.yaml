@@ -1,0 +1,13 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: hostpath-on-steriod
+
+parameters:
+  fsType: xfs 
+provisioner: csi.driver.hostpath.on.steriod
+allowedTopologies:
+  - matchLabelExpressions:
+      - key: kubernetes.io/hostname
+        values:
+          - kind-control-plane

@@ -5,9 +5,11 @@ go 1.25.0
 require (
 	github.com/container-storage-interface/spec v1.12.0
 	google.golang.org/grpc v1.57.1
+	k8s.io/klog/v2 v2.140.0
 )
 
 require (
+	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect

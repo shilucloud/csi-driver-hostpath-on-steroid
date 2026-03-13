@@ -18,4 +18,4 @@ RUN apk add --no-cache ca-certificates
 
 COPY --from=builder /app/app .
 
-CMD ["./app"]
+ENTRYPOINT ["./app"]

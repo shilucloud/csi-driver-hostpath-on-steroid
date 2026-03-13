@@ -5,6 +5,14 @@ import (
 	"fmt"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/util"
+)
+
+var (
+	nodeCaps = []csi.NodeServiceCapability_RPC_Type{
+		csi.NodeServiceCapability_RPC_STAGE_UNSTAGE_VOLUME,
+		csi.NodeServiceCapability_RPC_VOLUME_MOUNT_GROUP,
+	}
 )
 
 type NodeService struct {
@@ -40,11 +48,29 @@ func (n *NodeService) NodeExpandVolume(ctx context.Context, req *csi.NodeExpandV
 }
 
 func (n *NodeService) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetCapabilitiesRequest) (*csi.NodeGetCapabilitiesResponse, error) {
-	return &csi.NodeGetCapabilitiesResponse{}, nil
+
+	caps := make([]*csi.NodeServiceCapability, 0, len(nodeCaps))
+	for _, capability := range nodeCaps {
+		c := &csi.NodeServiceCapability{
+			Type: &csi.NodeServiceCapability_Rpc{
+				Rpc: &csi.NodeServiceCapability_RPC{
+					Type: capability,
+				},
+			},
+		}
+		caps = append(caps, c)
+	}
+	return &csi.NodeGetCapabilitiesResponse{Capabilities: caps}, nil
 }
 
 func (n *NodeService) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
-	return &csi.NodeGetInfoResponse{}, nil
+	return &csi.NodeGetInfoResponse{
+		NodeId:            util.GetHostName(),
+		MaxVolumesPerNode: util.GetNumberOfVolumesPerNode(),
+		AccessibleTopology: &csi.Topology{
+			Segments: map[string]string{"region": "us-east-1",
+				"zone": "us-east-1a"}},
+	}, nil
 }
 
 func (n *NodeService) NodeGetVolumeStats(ctx context.Context, req *csi.NodeGetVolumeStatsRequest) (*csi.NodeGetVolumeStatsResponse, error) {

@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: csi-node-driver
+  namespace: testing
+spec:
+  selector:
+    matchLabels:
+      csi-driver: node
+  template:
+    metadata:
+      name: csi-node-driver-pod
+      labels:
+        csi-driver: node
+    spec:
+      containers:
+        - name: node-driver-registrar
+          image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.16.0
+          args:
+            - "--csi-address=/var/run/csi.sock"
+            - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi.driver.hostpath.on.steriod/csi.sock"
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/
+            - name: registration-dir
+              mountPath: /registration
+
+        - name: csi-driver
+          image: shilucloud/csi-driver-hostpath-on-steriod:local
+          args:
+            - --endpoint=unix:///var/run/csi.sock
+            - --mode=node
+            - --name=csi.driver.hostpath.on.steriod
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/
+              
+      volumes:
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+        - name: socket-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/csi.driver.hostpath.on.steriod//
+            type: DirectoryOrCreate

@@ -3,8 +3,12 @@ package driver
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	klog "k8s.io/klog/v2"
 )
 
 var (
@@ -25,12 +29,65 @@ type ControllerService struct {
 }
 
 func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
-	fmt.Print("This is createvol")
-	return &csi.CreateVolumeResponse{}, nil
+	klog.InfoS("Received CreateVolume request", "request", req)
+
+	if req.Name == "" {
+		klog.ErrorS(fmt.Errorf("req.Name is empty"), "Name is not provided", "name", req.Name)
+		return nil, status.Error(codes.InvalidArgument, "name must be provided")
+	}
+
+	byteSize := req.CapacityRange.GetRequiredBytes()
+	if byteSize == 0 {
+		byteSize = 1 * 1024 * 1024 * 1024 // default 1GB
+	}
+
+	// use preferred first, fall back to requisite
+	var node string
+	if req.AccessibilityRequirements != nil {
+		if len(req.AccessibilityRequirements.Preferred) > 0 {
+			node = req.AccessibilityRequirements.Preferred[0].Segments["kubernetes.io/hostname"]
+		}
+		if node == "" && len(req.AccessibilityRequirements.Requisite) > 0 {
+			node = req.AccessibilityRequirements.Requisite[0].Segments["kubernetes.io/hostname"]
+		}
+	}
+	if node == "" {
+		klog.ErrorS(fmt.Errorf("node name is empty"), "no node found in topology", "node", node)
+		return nil, status.Error(codes.InvalidArgument, "no node found in topology")
+	}
+
+	fsType := req.Parameters["fsType"]
+	if fsType == "" {
+		fsType = "xfs"
+	}
+
+	volID := req.Name + "-" + node
+	klog.InfoS("Creating volume", "volID", volID, "node", node, "byteSize", byteSize, "fsType", fsType)
+
+	return &csi.CreateVolumeResponse{
+		Volume: &csi.Volume{
+			VolumeId:      volID,
+			CapacityBytes: byteSize,
+			AccessibleTopology: []*csi.Topology{{
+				Segments: map[string]string{
+					"kubernetes.io/hostname": node,
+				},
+			}},
+			VolumeContext: map[string]string{
+				"fsType":   fsType,
+				"volID":    volID,
+				"byteSize": strconv.FormatInt(byteSize, 10),
+			},
+		},
+	}, nil
 }
 
 func (cs *ControllerService) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	fmt.Print("This is deletevol")
+	klog.InfoS("Received DeleteVolume request", "request", req)
+	volID := req.VolumeId
+
+	klog.InfoS("Successfully Deleted the Volume", "volID", volID)
+
 	return &csi.DeleteVolumeResponse{}, nil
 }
 

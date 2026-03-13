@@ -17,6 +17,8 @@ func main() {
 	)
 	flag.Parse()
 
+	fmt.Println(*endpoint, *mode, *name)
+
 	d, err := driver.NewDriver(&driver.Options{
 		Mode:     driver.Mode(*mode),
 		Endpoint: *endpoint,
