@@ -9,7 +9,9 @@ import (
 	hposv1 "github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/apis/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	klog "k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -36,16 +38,14 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 	klog.InfoS("Received CreateVolume request", "request", req)
 
 	if req.Name == "" {
-		klog.ErrorS(fmt.Errorf("req.Name is empty"), "Name is not provided", "name", req.Name)
 		return nil, status.Error(codes.InvalidArgument, "name must be provided")
 	}
 
 	byteSize := req.CapacityRange.GetRequiredBytes()
 	if byteSize == 0 {
-		byteSize = 1 * 1024 * 1024 * 1024 // default 1GB
+		byteSize = 1 * 1024 * 1024 * 1024
 	}
 
-	// use preferred first, fall back to requisite
 	var node string
 	if req.AccessibilityRequirements != nil {
 		if len(req.AccessibilityRequirements.Preferred) > 0 {
@@ -56,7 +56,6 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 		}
 	}
 	if node == "" {
-		klog.ErrorS(fmt.Errorf("node name is empty"), "no node found in topology", "node", node)
 		return nil, status.Error(codes.InvalidArgument, "no node found in topology")
 	}
 
@@ -66,9 +65,35 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 	}
 
 	volID := req.Name + "-" + node
-	klog.InfoS("Creating volume", "volID", volID, "node", node, "byteSize", byteSize, "fsType", fsType)
 
-	// creating hopsvolume crd to represent the volume in Kubernetes
+	// idempotency check
+	existingVol := &hposv1.HPOSVolume{}
+	err := cs.goClient.Get(ctx, client.ObjectKey{Name: volID}, existingVol)
+	if err == nil {
+		// volume already exists — return stored values not request values
+		klog.InfoS("volume already exists", "volID", volID)
+		existingBytes, _ := strconv.ParseInt(existingVol.Spec.ByteSize, 10, 64)
+		return &csi.CreateVolumeResponse{
+			Volume: &csi.Volume{
+				VolumeId:      existingVol.Spec.VolID,
+				CapacityBytes: existingBytes,
+				AccessibleTopology: []*csi.Topology{{
+					Segments: map[string]string{
+						"kubernetes.io/hostname": existingVol.Spec.NodeName,
+					},
+				}},
+				VolumeContext: map[string]string{
+					"fsType":   existingVol.Spec.FsType,
+					"volID":    existingVol.Spec.VolID,
+					"byteSize": existingVol.Spec.ByteSize,
+				},
+			},
+		}, nil
+	} else if !apierrors.IsNotFound(err) {
+		return nil, status.Errorf(codes.Internal, "failed to check existing volume: %v", err)
+	}
+
+	// create new CR
 	vol := &hposv1.HPOSVolume{
 		ObjectMeta: metav1.ObjectMeta{Name: volID},
 		Spec: hposv1.HPOSVolumeSpec{
@@ -77,15 +102,18 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 			ByteSize: strconv.FormatInt(byteSize, 10),
 			FsType:   fsType,
 		},
-		Status: hposv1.HPOSVolumeStatus{
-			Phase: "created",
-		},
 	}
-	err := cs.goClient.Create(ctx, vol)
-	if err != nil {
-		klog.ErrorS(err, "Error creating HPOSVolume CRD", "volID", volID)
-		return nil, status.Error(codes.Internal, fmt.Sprintf("error creating HPOSVolume CRD: %v", err))
+	if err = cs.goClient.Create(ctx, vol); err != nil {
+		return nil, status.Errorf(codes.Internal, "error creating HPOSVolume: %v", err)
 	}
+
+	// update status separately
+	vol.Status.Phase = "created"
+	if err = cs.goClient.Status().Update(ctx, vol); err != nil {
+		klog.ErrorS(err, "failed to update status", "volID", volID)
+	}
+
+	klog.InfoS("volume created", "volID", volID, "node", node, "byteSize", byteSize)
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
@@ -113,14 +141,59 @@ func (cs *ControllerService) DeleteVolume(ctx context.Context, req *csi.DeleteVo
 
 	return &csi.DeleteVolumeResponse{}, nil
 }
-
 func (cs *ControllerService) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
-	fmt.Print("This is controllerpubvol")
-	return &csi.ControllerPublishVolumeResponse{}, nil
+	klog.InfoS("Received ControllerPublishVolume request", "volID", req.VolumeId, "nodeID", req.NodeId)
+
+	if req.VolumeId == "" {
+		return nil, status.Error(codes.InvalidArgument, "VolumeId must be provided")
+	}
+	if req.NodeId == "" {
+		return nil, status.Error(codes.InvalidArgument, "NodeId must be provided")
+	}
+
+	vol := &hposv1.HPOSVolume{}
+	if err := cs.goClient.Get(ctx, client.ObjectKey{Name: req.VolumeId}, vol); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.ErrorS(err, "Volume not found", "volID", req.VolumeId)
+			return nil, status.Errorf(codes.NotFound, "volume %s not found", req.VolumeId)
+		}
+		klog.ErrorS(err, "Failed to get volume", "volID", req.VolumeId)
+		return nil, status.Errorf(codes.Internal, "failed to get volume: %v", err)
+	}
+
+	klog.InfoS("Found volume CR", "volID", req.VolumeId, "specNode", vol.Spec.NodeName, "phase", vol.Status.Phase)
+
+	if vol.Spec.NodeName != req.NodeId {
+		klog.ErrorS(nil, "Node mismatch", "volID", req.VolumeId, "specNode", vol.Spec.NodeName, "requestedNode", req.NodeId)
+		return nil, status.Errorf(codes.InvalidArgument,
+			"volume %s belongs to node %s, not %s",
+			req.VolumeId, vol.Spec.NodeName, req.NodeId)
+	}
+
+	imgPath := fmt.Sprintf("/var/lib/hpos/%s.img", req.VolumeId)
+
+	if vol.Status.Phase == "attached" {
+		klog.InfoS("Volume already attached, returning idempotent response", "volID", req.VolumeId, "imgPath", imgPath)
+		return &csi.ControllerPublishVolumeResponse{
+			PublishContext: map[string]string{"imgPath": imgPath},
+		}, nil
+	}
+
+	vol.Status.Phase = "attached"
+	if err := cs.goClient.Status().Update(ctx, vol); err != nil {
+		klog.ErrorS(err, "Failed to update volume status to attached", "volID", req.VolumeId)
+		return nil, status.Errorf(codes.Internal, "failed to update status: %v", err)
+	}
+
+	klog.InfoS("Volume attached successfully", "volID", req.VolumeId, "node", req.NodeId, "imgPath", imgPath)
+	return &csi.ControllerPublishVolumeResponse{
+		PublishContext: map[string]string{"imgPath": imgPath},
+	}, nil
 }
 
 func (cs *ControllerService) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
-	fmt.Print("This is controllerunpubvol")
+	klog.InfoS("ControllerUnpublishVolume is called", "volID", req.VolumeId, "nodeID", req.NodeId)
+
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 

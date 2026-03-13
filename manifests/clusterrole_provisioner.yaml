@@ -22,8 +22,16 @@ rules:
 
 - apiGroups: ["storage.k8s.io"]
   resources: ["volumeattachments"]
-  verbs: ["watch", "list"]
+  verbs: ["watch", "list", "get", "patch"]
+
+- apiGroups: ["storage.k8s.io"]
+  resources: ["volumeattachments/status"]
+  verbs: ["watch", "list", "get", "patch"]
 
 - apiGroups: ["shilu.cloud"]
   resources: ["hposvolumes"]
   verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
+
+- apiGroups: ["shilu.cloud"]
+  resources: ["hposvolumes/status"]  
+  verbs: ["get", "update", "patch"]

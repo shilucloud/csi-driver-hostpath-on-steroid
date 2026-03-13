@@ -19,6 +19,7 @@ spec:
           args:
             - "--csi-address=/var/run/csi.sock"
             - "--kubelet-registration-path=/var/lib/kubelet/plugins/csi.driver.hostpath.on.steriod/csi.sock"
+            - --v=5
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/
@@ -31,6 +32,11 @@ spec:
             - --endpoint=unix:///var/run/csi.sock
             - --mode=node
             - --name=csi.driver.hostpath.on.steriod
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run/

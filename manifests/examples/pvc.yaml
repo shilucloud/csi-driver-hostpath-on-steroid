@@ -9,4 +9,4 @@ spec:
       storage: 1G
   accessModes:
     - ReadWriteOnce
-  volumeMode: Block
+  volumeMode: Filesystem

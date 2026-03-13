@@ -3,9 +3,11 @@ package driver
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/util"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -64,12 +66,19 @@ func (n *NodeService) NodeGetCapabilities(ctx context.Context, req *csi.NodeGetC
 }
 
 func (n *NodeService) NodeGetInfo(ctx context.Context, req *csi.NodeGetInfoRequest) (*csi.NodeGetInfoResponse, error) {
+	nodeName := os.Getenv("NODE_NAME")
+	if nodeName == "" {
+		return nil, status.Error(codes.Internal, "NODE_NAME env var not set")
+	}
+
 	return &csi.NodeGetInfoResponse{
-		NodeId:            util.GetHostName(),
-		MaxVolumesPerNode: util.GetNumberOfVolumesPerNode(),
+		NodeId:            nodeName,
+		MaxVolumesPerNode: 5,
 		AccessibleTopology: &csi.Topology{
-			Segments: map[string]string{"region": "us-east-1",
-				"zone": "us-east-1a"}},
+			Segments: map[string]string{
+				"kubernetes.io/hostname": nodeName,
+			},
+		},
 	}, nil
 }
 

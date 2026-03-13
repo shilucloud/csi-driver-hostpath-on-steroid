@@ -33,6 +33,16 @@ spec:
           volumeMounts:
             - name: socket-dir
               mountPath: /var/run
+        
+        - name: external-attacher 
+          image: registry.k8s.io/sig-storage/csi-attacher:v4.11.0
+          args:
+            - --csi-address=unix:///var/run/csi.sock
+            - --v=5
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run
+
       volumes:
         - name: socket-dir
           emptyDir: {}
