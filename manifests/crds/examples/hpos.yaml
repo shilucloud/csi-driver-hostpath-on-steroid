@@ -1,0 +1,10 @@
+apiVersion: shilu.cloud/v1
+kind: HPOSVolume
+metadata:
+  name: vol-123
+spec:
+  volID: vol-1234
+  nodeName: node-1234
+  byteSize: "122222"
+  fsType: "xfs"
+  

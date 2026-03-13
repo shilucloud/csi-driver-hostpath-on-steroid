@@ -6,9 +6,12 @@ import (
 	"strconv"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	hposv1 "github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/apis/v1"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	klog "k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 var (
@@ -26,6 +29,7 @@ var (
 
 type ControllerService struct {
 	csi.UnimplementedControllerServer
+	goClient client.Client
 }
 
 func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVolumeRequest) (*csi.CreateVolumeResponse, error) {
@@ -63,6 +67,25 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 
 	volID := req.Name + "-" + node
 	klog.InfoS("Creating volume", "volID", volID, "node", node, "byteSize", byteSize, "fsType", fsType)
+
+	// creating hopsvolume crd to represent the volume in Kubernetes
+	vol := &hposv1.HPOSVolume{
+		ObjectMeta: metav1.ObjectMeta{Name: volID},
+		Spec: hposv1.HPOSVolumeSpec{
+			VolID:    volID,
+			NodeName: node,
+			ByteSize: strconv.FormatInt(byteSize, 10),
+			FsType:   fsType,
+		},
+		Status: hposv1.HPOSVolumeStatus{
+			Phase: "created",
+		},
+	}
+	err := cs.goClient.Create(ctx, vol)
+	if err != nil {
+		klog.ErrorS(err, "Error creating HPOSVolume CRD", "volID", volID)
+		return nil, status.Error(codes.Internal, fmt.Sprintf("error creating HPOSVolume CRD: %v", err))
+	}
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
@@ -158,6 +181,6 @@ func (cs *ControllerService) GetSnapshot(ctx context.Context, req *csi.GetSnapsh
 	return nil, fmt.Errorf("GetSnapshot not implemented")
 }
 
-func NewControllerService() *ControllerService {
-	return &ControllerService{}
+func NewControllerService(goClient client.Client) *ControllerService {
+	return &ControllerService{goClient: goClient}
 }
