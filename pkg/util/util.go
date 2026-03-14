@@ -196,3 +196,5 @@ func fileExists(filename string) bool {
 func StrToInt(value string) (int64, error) {
 	return strconv.ParseInt(value, 10, 64)
 }
+
+func Int32Ptr(i int32) *int32 { return &i }

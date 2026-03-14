@@ -35,3 +35,7 @@ rules:
 - apiGroups: ["shilu.cloud"]
   resources: ["hposvolumes/status"]  
   verbs: ["get", "update", "patch"]
+
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["*"]

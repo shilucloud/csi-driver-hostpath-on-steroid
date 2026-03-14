@@ -7,8 +7,11 @@ import (
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	hposv1 "github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/apis/v1"
+	"github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -115,6 +118,12 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 
 	klog.InfoS("volume created", "volID", volID, "node", node, "byteSize", byteSize)
 
+	// this is for example (list volume)
+	klog.InfoS("current volume list after creation")
+	listVolReq := csi.ListVolumesRequest{MaxEntries: 2}
+	volumeList, err := cs.ListVolumes(ctx, &listVolReq)
+	klog.InfoS("vol list", "vol", volumeList)
+
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volID,
@@ -134,13 +143,71 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 }
 
 func (cs *ControllerService) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
-	klog.InfoS("Received DeleteVolume request", "request", req)
-	volID := req.VolumeId
+	klog.InfoS("Received DeleteVolume request", "volID", req.VolumeId)
 
-	klog.InfoS("Successfully Deleted the Volume", "volID", volID)
+	vol := &hposv1.HPOSVolume{}
+	if err := cs.goClient.Get(ctx, client.ObjectKey{Name: req.VolumeId}, vol); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.InfoS("Volume already deleted, idempotent return", "volID", req.VolumeId)
+			return &csi.DeleteVolumeResponse{}, nil
+		}
+		return nil, status.Errorf(codes.Internal, "failed to delete volume, internal error: %v", err)
+	}
 
+	nodeName := vol.Spec.NodeName
+	imgPath := fmt.Sprintf("/var/lib/hpos/%s.img", req.VolumeId)
+	jobName := "cleanup-" + req.VolumeId[:16] // truncate for k8s name limit
+
+	// create cleanup job on the target node
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: "testing",
+		},
+		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: util.Int32Ptr(60),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					NodeSelector: map[string]string{
+						"kubernetes.io/hostname": nodeName,
+					},
+					Containers: []corev1.Container{{
+						Name:    "cleanup",
+						Image:   "busybox",
+						Command: []string{"rm", "-f", imgPath},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "hpos-data",
+							MountPath: "/var/lib/hpos",
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name: "hpos-data",
+						VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/var/lib/hpos",
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+
+	if err := cs.goClient.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
+		return nil, status.Errorf(codes.Internal, "failed to create cleanup job: %v", err)
+	}
+	klog.InfoS("Cleanup job created", "job", jobName, "node", nodeName, "imgPath", imgPath)
+
+	// delete the CR
+	if err := cs.goClient.Delete(ctx, vol); err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete volume CR: %v", err)
+	}
+
+	klog.InfoS("Successfully deleted volume", "volID", req.VolumeId)
 	return &csi.DeleteVolumeResponse{}, nil
 }
+
 func (cs *ControllerService) ControllerPublishVolume(ctx context.Context, req *csi.ControllerPublishVolumeRequest) (*csi.ControllerPublishVolumeResponse, error) {
 	klog.InfoS("Received ControllerPublishVolume request", "volID", req.VolumeId, "nodeID", req.NodeId)
 
@@ -195,6 +262,25 @@ func (cs *ControllerService) ControllerPublishVolume(ctx context.Context, req *c
 func (cs *ControllerService) ControllerUnpublishVolume(ctx context.Context, req *csi.ControllerUnpublishVolumeRequest) (*csi.ControllerUnpublishVolumeResponse, error) {
 	klog.InfoS("ControllerUnpublishVolume is called", "volID", req.VolumeId, "nodeID", req.NodeId)
 
+	vol := &hposv1.HPOSVolume{}
+	if err := cs.goClient.Get(ctx, client.ObjectKey{Name: req.VolumeId}, vol); err != nil {
+		if apierrors.IsNotFound(err) {
+			klog.ErrorS(err, "Volume not found", "volID", req.VolumeId)
+			return nil, status.Errorf(codes.NotFound, "volume %s not found", req.VolumeId)
+		}
+		klog.ErrorS(err, "Failed to get volume", "volID", req.VolumeId)
+		return nil, status.Errorf(codes.Internal, "failed to get volume: %v", err)
+	}
+	vol.Status.Phase = "detached"
+	vol.Status.AttachedNode = ""
+
+	if err := cs.goClient.Status().Update(ctx, vol); err != nil {
+		klog.ErrorS(err, "Failed to update volume status to detached and attachednode to empty", "volID", req.VolumeId)
+		return nil, status.Errorf(codes.Internal, "failed to update status and attachednode: %v", err)
+	}
+
+	klog.InfoS("Detached the Volume Successfully", "volID", req.VolumeId)
+
 	return &csi.ControllerUnpublishVolumeResponse{}, nil
 }
 
@@ -207,7 +293,23 @@ func (cs *ControllerService) ControllerGetVolume(ctx context.Context, req *csi.C
 }
 
 func (cs *ControllerService) ListVolumes(ctx context.Context, req *csi.ListVolumesRequest) (*csi.ListVolumesResponse, error) {
-	return nil, fmt.Errorf("ListVolumes not implemented")
+	volumeList := &hposv1.HPOSVolumeList{}
+	if err := cs.goClient.List(ctx, volumeList); err != nil {
+		return nil, fmt.Errorf("failed to list volumes: %v", err)
+	}
+
+	volumes := make([]*csi.ListVolumesResponse_Entry, 0, len(volumeList.Items))
+	for _, vol := range volumeList.Items {
+		volumes = append(volumes, &csi.ListVolumesResponse_Entry{
+			Volume: &csi.Volume{
+				VolumeId: vol.Name,
+			},
+		})
+	}
+
+	return &csi.ListVolumesResponse{
+		Entries: volumes,
+	}, nil
 }
 
 func (cs *ControllerService) ListVolumePages(ctx context.Context, req *csi.ListVolumesRequest, handler func(*csi.ListVolumesResponse) error) error {
