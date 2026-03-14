@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "csi-driver-hostpath-on-steriod.fullname" . }}-node
+  labels:
+    {{- include "csi-driver-hostpath-on-steriod.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "csi-driver-hostpath-on-steriod.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: node
+  template:
+    metadata:
+      labels:
+        {{- include "csi-driver-hostpath-on-steriod.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: node
+    spec:
+      containers:
+        - name: node-driver-registrar
+          image: "{{ .Values.sidecars.nodeDriverRegistrar.image }}:{{ .Values.sidecars.nodeDriverRegistrar.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - --csi-address=/var/run/csi.sock
+            - --kubelet-registration-path=/var/lib/kubelet/plugins/{{ include "csi-driver-hostpath-on-steriod.driverName" . }}/csi.sock
+            - --v=5
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /var/run/
+            - name: registration-dir
+              mountPath: /registration
+          {{- with .Values.sidecars.nodeDriverRegistrar.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+        - name: csi-driver
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
+          args:
+            - --endpoint=unix:///var/run/csi.sock
+            - --mode=node
+            - --name={{ include "csi-driver-hostpath-on-steriod.driverName" . }}
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: dev
+              mountPath: /dev
+            - name: socket-dir
+              mountPath: /var/run/
+            - name: hpos-data
+              mountPath: /var/lib/hpos
+            - name: staging-dir
+              mountPath: /var/lib/kubelet
+              mountPropagation: Bidirectional
+          securityContext:
+            privileged: true
+          {{- with .Values.node.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+
+      volumes:
+        - name: dev
+          hostPath:
+            path: /dev
+
+        - name: hpos-data
+          hostPath:
+            path: /var/lib/hpos
+            type: DirectoryOrCreate
+
+        - name: staging-dir
+          hostPath:
+            path: /var/lib/kubelet
+            type: DirectoryOrCreate
+
+        - name: registration-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins_registry/
+            type: Directory
+
+        - name: socket-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/{{ include "csi-driver-hostpath-on-steriod.driverName" . }}/
+            type: DirectoryOrCreate

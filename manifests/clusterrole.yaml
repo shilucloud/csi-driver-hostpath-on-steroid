@@ -1,0 +1,41 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: hpos-cr
+rules:
+
+- apiGroups: [""]
+  resources: ["events"]
+  verbs: ["create", "patch", "update"]
+
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["watch", "list", "create", "delete", "update", "patch"]
+
+- apiGroups: [""]
+  resources: ["nodes", "persistentvolumeclaims"]
+  verbs: ["watch"]
+
+- apiGroups: ["storage.k8s.io"]
+  resources: ["csinodes", "storageclasses"]
+  verbs: ["watch"]
+
+- apiGroups: ["storage.k8s.io"]
+  resources: ["volumeattachments"]
+  verbs: ["watch", "list", "get", "patch"]
+
+- apiGroups: ["storage.k8s.io"]
+  resources: ["volumeattachments/status"]
+  verbs: ["watch", "list", "get", "patch"]
+
+- apiGroups: ["shilu.cloud"]
+  resources: ["hposvolumes"]
+  verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
+
+- apiGroups: ["shilu.cloud"]
+  resources: ["hposvolumes/status"]  
+  verbs: ["get", "update", "patch"]
+
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["*"]

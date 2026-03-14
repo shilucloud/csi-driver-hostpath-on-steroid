@@ -1,16 +1,14 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "charts.name" -}}
+{{- define "csi-driver-hostpath-on-steriod.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Create a default fully qualified app name.
-We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
-If release name contains chart name it will be used as a full name.
 */}}
-{{- define "charts.fullname" -}}
+{{- define "csi-driver-hostpath-on-steriod.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -26,37 +24,47 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "charts.chart" -}}
+{{- define "csi-driver-hostpath-on-steriod.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "charts.labels" -}}
-helm.sh/chart: {{ include "charts.chart" . }}
-{{ include "charts.selectorLabels" . }}
+{{- define "csi-driver-hostpath-on-steriod.labels" -}}
+helm.sh/chart: {{ include "csi-driver-hostpath-on-steriod.chart" . }}
+{{ include "csi-driver-hostpath-on-steriod.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: {{ .Chart.Name }}
+app.kubernetes.io/component: {{ .Values.component | default "csi-driver" }}
 {{- end }}
 
 {{/*
 Selector labels
 */}}
-{{- define "charts.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "charts.name" . }}
+{{- define "csi-driver-hostpath-on-steriod.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "csi-driver-hostpath-on-steriod.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "charts.serviceAccountName" -}}
+{{- define "csi-driver-hostpath-on-steriod.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "charts.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "csi-driver-hostpath-on-steriod.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
+{{- end }}
+
+
+{{/*
+CSI Driver name
+*/}}
+{{- define "csi-driver-hostpath-on-steriod.driverName" -}}
+{{- default .Chart.Name .Values.driverName }}
 {{- end }}
