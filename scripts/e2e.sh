@@ -18,8 +18,8 @@ info() { echo -e "${YELLOW}➜ $1${NC}"; }
 # STEP 1: BUILD AND LOAD IMAGE
 # ─────────────────────────────────────────
 info "Building and loading image..."
-docker build -t $IMAGE .
-kind load docker-image $IMAGE --name kind
+#docker build -t $IMAGE .
+#kind load docker-image $IMAGE --name kind
 pass "Image built and loaded"
 
 # ─────────────────────────────────────────
@@ -41,10 +41,10 @@ kubectl delete volumeattachment --all --ignore-not-found 2>/dev/null || true
 
 info "Waiting for old pods to terminate..."
 kubectl wait --for=delete pod \
-  -l app=csi-driver-hostpath-on-steriod \
+  -l csi-driver-component=controller \
   -n $NAMESPACE --timeout=60s 2>/dev/null || true
 kubectl wait --for=delete pod \
-  -l csi-driver=node \
+  -l csi-driver-component=node \
   -n $NAMESPACE --timeout=60s 2>/dev/null || true
 pass "Old resources cleaned up"
 
@@ -74,7 +74,7 @@ pass "Controller pod ready"
 
 info "Waiting for node daemonset pod to be ready..."
 kubectl wait --for=condition=ready pod \
-  -l csi-driver=node \
+  -l csi-driver-component=node \
   -n $NAMESPACE --timeout=120s \
   || fail "Node pod not ready"
 pass "Node pod ready"
