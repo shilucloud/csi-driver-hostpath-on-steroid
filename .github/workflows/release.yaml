@@ -61,8 +61,8 @@ jobs:
 
       - name: Update image tag in values.yaml
         run: |
-          VERSION=${{ needs.docker.outputs.version }}
-          sed -i "s/tag: .*/tag: \"$VERSION\"/" charts/values.yaml
+            VERSION=${{ needs.docker.outputs.version }}
+            sed -i "s/tag: \"local\"/tag: \"$VERSION\"/" charts/values.yaml
 
       - name: Update Chart.yaml version
         run: |
