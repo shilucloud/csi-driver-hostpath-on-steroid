@@ -3,6 +3,7 @@ kind: StorageClass
 metadata:
   name: hostpath-on-steriod
 
+volumeBindingMode: WaitForFirstConsumer
 parameters:
   fsType: xfs 
 provisioner: csi.driver.hostpath.on.steriod

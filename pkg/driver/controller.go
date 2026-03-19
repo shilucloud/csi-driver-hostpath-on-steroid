@@ -119,12 +119,6 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 
 	klog.InfoS("volume created", "volID", volID, "node", node, "byteSize", byteSize)
 
-	// this is for example (list volume)
-	klog.InfoS("current volume list after creation")
-	listVolReq := csi.ListVolumesRequest{MaxEntries: 2}
-	volumeList, err := cs.ListVolumes(ctx, &listVolReq)
-	klog.InfoS("vol list", "vol", volumeList)
-
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
 			VolumeId:      volID,
@@ -145,6 +139,10 @@ func (cs *ControllerService) CreateVolume(ctx context.Context, req *csi.CreateVo
 
 func (cs *ControllerService) DeleteVolume(ctx context.Context, req *csi.DeleteVolumeRequest) (*csi.DeleteVolumeResponse, error) {
 	klog.InfoS("Received DeleteVolume request", "volID", req.VolumeId)
+
+	if req.VolumeId == "" {
+		return nil, status.Error(codes.InvalidArgument, "VolumeId must be provided")
+	}
 
 	vol := &hposv1.HPOSVolume{}
 	if err := cs.goClient.Get(ctx, client.ObjectKey{Name: req.VolumeId}, vol); err != nil {
@@ -203,6 +201,14 @@ func (cs *ControllerService) DeleteVolume(ctx context.Context, req *csi.DeleteVo
 		return nil, status.Errorf(codes.Internal, "failed to create cleanup job: %v", err)
 	}
 	klog.InfoS("Cleanup job created", "job", jobName, "node", nodeName, "imgPath", imgPath)
+
+	// Wait for the job to complete
+	if err := util.WaitForJobCompletion(ctx, cs.goClient, cs.namespace, jobName); err != nil {
+		klog.ErrorS(err, "Cleanup job failed", "job", jobName)
+		return nil, status.Errorf(codes.Internal, "cleanup job failed: %v", err)
+	}
+
+	klog.InfoS("Cleanup job completed successfully", "job", jobName)
 
 	// delete the CR
 	if err := cs.goClient.Delete(ctx, vol); err != nil {

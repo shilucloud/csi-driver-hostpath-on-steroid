@@ -16,7 +16,7 @@ spec:
         csi-driver-component: controller
       name: csi-driver
     spec:
-      serviceAccountName: hostpath-on-steriod-sa
+      serviceAccountName: hpos-sa
       containers:
         - name: csi-driver
           image: shilucloud/csi-driver-hostpath-on-steriod:local

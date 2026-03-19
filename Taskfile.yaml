@@ -34,6 +34,22 @@ tasks:
       - kubectl apply -f manifests/storageclass.yaml
       - kubectl apply -f manifests/controller.yaml
       - kubectl apply -f manifests/node.yaml
+  
+  list:
+    desc: "List all CSI related resources"
+    cmds:
+      - echo "=== PODS ==="
+      - kubectl get pods -n testing
+      - echo "=== PVC ==="
+      - kubectl get pvc
+      - echo "=== PV ==="
+      - kubectl get pv
+      - echo "=== HPOSVOLUME ==="
+      - kubectl get hpvol
+      - echo "=== VOLUMEATTACHMENT ==="
+      - kubectl get volumeattachment
+      - echo "=== CSINODE ==="
+      - kubectl get csinode
 
   dev:
     desc: "Build image and redeploy driver"

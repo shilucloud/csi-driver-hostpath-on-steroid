@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -10,6 +11,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
+
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func ParseEndpoint(endpoint string) (string, string, error) {
@@ -198,3 +205,25 @@ func StrToInt(value string) (int64, error) {
 }
 
 func Int32Ptr(i int32) *int32 { return &i }
+
+func WaitForJobCompletion(ctx context.Context, goClient client.Client, namespace, jobName string) error {
+	// Poll the job status until it completes or fails
+	klog.InfoS("Waiting for job to complete", "job", jobName, "namespace", namespace)
+	for {
+		job := &batchv1.Job{}
+		if err := goClient.Get(ctx, client.ObjectKey{Namespace: namespace, Name: jobName}, job); err != nil {
+			return fmt.Errorf("failed to get job %s: %w", jobName, err)
+		}
+
+		for _, c := range job.Status.Conditions {
+			if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+				return nil // Job completed successfully
+			}
+			if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+				return fmt.Errorf("job %s failed: %s", jobName, c.Message)
+			}
+		}
+
+		time.Sleep(2 * time.Second) // Wait before polling again
+	}
+}
