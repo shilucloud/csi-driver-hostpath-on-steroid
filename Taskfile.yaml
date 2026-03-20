@@ -2,6 +2,25 @@
 version: '3'
 
 tasks:
+  create-namespace:
+    desc: "Create testing namespace"
+    cmds:
+      - kubectl create ns testing --dry-run=client -o yaml | kubectl apply -f -
+  
+  create-crds:
+    desc: "Create CRDs"
+    cmds:
+      - kubectl apply -f manifests/crds/hpos-crd.yaml
+
+  create-kind-cluster:
+    desc: "Create kind cluster"
+    cmds:
+      - kind create cluster --name csi-driver --config=kind-config.yaml
+  
+  exec-into-nix-shell:
+    desc: "Exec into nix shell"
+    cmds:
+      - nix-shell 
 
   build:
     desc: "Build the driver binary"
