@@ -28,3 +28,27 @@ type HPOSVolumeList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []HPOSVolume `json:"items"`
 }
+
+/// snapshot types
+
+type HPOSSnapshotSpec struct {
+	SnapshotID  string `json:"snapshotID"`
+	SourceVolID string `json:"sourceVolID"`
+}
+
+type HPOSSnapshotStatus struct {
+	Phase string `json:"phase"`
+}
+
+type HPOSSnapshot struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              HPOSSnapshotSpec   `json:"spec"`
+	Status            HPOSSnapshotStatus `json:"status,omitempty"`
+}
+
+type HPOSSnapshotList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []HPOSSnapshot `json:"items"`
+}

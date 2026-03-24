@@ -39,3 +39,17 @@ rules:
 - apiGroups: ["batch"]
   resources: ["jobs"]
   verbs: ["*"]
+
+- apiGroups: ["shilu.cloud"]
+  resources: ["hpossnapshots"]
+  verbs: ["create", "delete", "get", "list", "watch", "update", "patch"]
+
+- apiGroups: ["snapshot.storage.k8s.io"]
+  resources: ["volumesnapshotclasses", "volumesnapshotcontents", "volumesnapshots"]
+  verbs: ["watch", "list", "get", "create", "delete", "update", "patch"]
+
+- apiGroups: ["snapshot.storage.k8s.io"]
+  resources:
+    - volumesnapshotcontents/status
+    - volumesnapshots/status
+  verbs: ["update", "patch"]

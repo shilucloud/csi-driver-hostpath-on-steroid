@@ -6,6 +6,9 @@ import (
 
 	"github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/driver"
 	klog "k8s.io/klog/v2"
+
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 )
 
 func main() {
@@ -15,6 +18,9 @@ func main() {
 		mode     = flag.String("mode", "controller", "Used to define whether this is controller component or node component")
 		name     = flag.String("name", "csi.driver.hostpath.on.steriod", "Name of the CSI Driver")
 	)
+
+	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
+
 	flag.Parse()
 	podNamespace := os.Getenv("POD_NAMESPACE")
 

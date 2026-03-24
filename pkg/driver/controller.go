@@ -10,8 +10,7 @@ import (
 	"github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/util"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	batchv1 "k8s.io/api/batch/v1"
-	corev1 "k8s.io/api/core/v1"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -165,40 +164,7 @@ func (cs *ControllerService) DeleteVolume(ctx context.Context, req *csi.DeleteVo
 	klog.InfoS("Creating cleanup job to delete image file on node", "node", nodeName, "imgPath", imgPath)
 
 	// create cleanup job on the target node
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      jobName,
-			Namespace: cs.namespace,
-		},
-		Spec: batchv1.JobSpec{
-			TTLSecondsAfterFinished: util.Int32Ptr(60),
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyNever,
-					NodeSelector: map[string]string{
-						"kubernetes.io/hostname": nodeName,
-					},
-					Containers: []corev1.Container{{
-						Name:    "cleanup",
-						Image:   "busybox",
-						Command: []string{"rm", "-f", imgPath},
-						VolumeMounts: []corev1.VolumeMount{{
-							Name:      "hpos-data",
-							MountPath: "/var/lib/hpos",
-						}},
-					}},
-					Volumes: []corev1.Volume{{
-						Name: "hpos-data",
-						VolumeSource: corev1.VolumeSource{
-							HostPath: &corev1.HostPathVolumeSource{
-								Path: "/var/lib/hpos",
-							},
-						},
-					}},
-				},
-			},
-		},
-	}
+	job := util.DeleteImageJob(jobName, cs.namespace, nodeName, imgPath)
 
 	if err := cs.goClient.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
 		klog.ErrorS(fmt.Errorf("failed to create cleanup job"), "Failed to create cleanup job", "job", jobName, "node", nodeName, "imgPath", imgPath, "error", err)
@@ -405,7 +371,123 @@ func (cs *ControllerService) ControllerModifyVolume(ctx context.Context, req *cs
 }
 
 func (cs *ControllerService) CreateSnapshot(ctx context.Context, req *csi.CreateSnapshotRequest) (*csi.CreateSnapshotResponse, error) {
-	return nil, fmt.Errorf("CreateSnapshot not implemented")
+	if req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "name must be provided")
+	}
+
+	if req.SourceVolumeId == "" {
+		return nil, status.Error(codes.InvalidArgument, "source volume ID must be provided")
+	}
+
+	vol := &hposv1.HPOSVolume{}
+	err := cs.goClient.Get(ctx, client.ObjectKey{Name: req.SourceVolumeId}, vol)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil, status.Errorf(codes.NotFound, "source volume %s not found", req.SourceVolumeId)
+		}
+		klog.ErrorS(err, "Failed to retrieve source volume", "sourceVolumeId", req.SourceVolumeId)
+		return nil, status.Errorf(codes.Internal, "failed to retrieve source volume: %v", err)
+	}
+
+	nodeName := vol.Spec.NodeName
+	namespace := cs.namespace
+
+	klog.InfoS("NodeName and namespace", nodeName, namespace)
+
+	// idempotency check
+	existingSnapshot := &hposv1.HPOSSnapshot{}
+	snapshotName := req.Name + "-" + nodeName
+	err = cs.goClient.Get(ctx, client.ObjectKey{Name: snapshotName}, existingSnapshot)
+	if err == nil {
+		klog.InfoS("Snapshot already exists, returning existing snapshot", "snapshotName", snapshotName)
+		return &csi.CreateSnapshotResponse{
+			Snapshot: &csi.Snapshot{
+				SnapshotId:     existingSnapshot.Spec.SnapshotID,
+				SourceVolumeId: existingSnapshot.Spec.SourceVolID,
+			},
+		}, nil
+	}
+	if !apierrors.IsNotFound(err) {
+		klog.ErrorS(err, "Failed to check for existing snapshot", "snapshotName", snapshotName)
+		return nil, status.Errorf(codes.Internal, "failed to check for existing snapshot: %v", err)
+	}
+	klog.InfoS("Snapshot does not exist, proceeding with creation", "snapshotName", snapshotName)
+
+	// creating the job to create snapshot on the target node
+	jobName := "create-snapshot-" + req.SourceVolumeId[:16] // truncate for k8s name limit
+	imgPath := fmt.Sprintf("/var/lib/hpos/%s.img", req.SourceVolumeId)
+	snapshotPath := fmt.Sprintf("/var/lib/hpos/snapshots/%s", req.Name)
+	job := util.CreateSnapshotJob(jobName, namespace, nodeName, imgPath, snapshotPath)
+
+	if err := cs.goClient.Create(ctx, job); err != nil && !apierrors.IsAlreadyExists(err) {
+		klog.ErrorS(fmt.Errorf("failed to create Snapshot job"), "Failed to create Snapshot job", "job", jobName, "node", nodeName, "imgPath", imgPath, "snapshotPath", snapshotPath, "error", err)
+		return nil, status.Errorf(codes.Internal, "failed to create Snapshot job: %v", err)
+	}
+	klog.InfoS("Snapshot job created", "job", jobName, "node", nodeName, "imgPath", imgPath, "snapshotPath", snapshotPath)
+
+	// Wait for the job to complete
+	if err := util.WaitForJobCompletion(ctx, cs.goClient, cs.namespace, jobName); err != nil {
+		klog.ErrorS(err, "Snapshot job failed", "job", jobName)
+		return nil, status.Errorf(codes.Internal, "Snapshot job failed: %v", err)
+	}
+
+	snapshot := hposv1.HPOSSnapshot{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: snapshotName,
+			Finalizers: []string{
+				"hposnapshot.k8s.io.need-deletion"},
+		},
+		Spec: hposv1.HPOSSnapshotSpec{
+
+			SnapshotID:  snapshotName,
+			SourceVolID: req.SourceVolumeId,
+		},
+	}
+	err = cs.goClient.Create(ctx, &snapshot)
+	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			klog.InfoS("Snapshot was created by another request, returning existing", "snapshotName", snapshotName)
+			existing := &hposv1.HPOSSnapshot{}
+			getErr := cs.goClient.Get(ctx, client.ObjectKey{Name: snapshotName}, existing)
+			if getErr == nil {
+				return &csi.CreateSnapshotResponse{
+					Snapshot: &csi.Snapshot{
+						SnapshotId:     existing.Spec.SnapshotID,
+						SourceVolumeId: existing.Spec.SourceVolID,
+						CreationTime:   timestamppb.Now(),
+					},
+				}, nil
+			}
+			klog.ErrorS(getErr, "Failed to fetch existing snapshot after AlreadyExists error", "snapshotName", snapshotName)
+		}
+
+		klog.ErrorS(err, "Internal Error: Error while creating HPOSSnapshot object")
+		cleanupJobName := "cleanup-snapshot-" + req.Name[:16]
+		cleanupJob := util.DeleteImageJob(cleanupJobName, cs.namespace, nodeName, snapshotPath)
+		if cleanupErr := cs.goClient.Create(ctx, cleanupJob); cleanupErr != nil && !apierrors.IsAlreadyExists(cleanupErr) {
+			klog.ErrorS(cleanupErr, "Failed to create cleanup job for snapshot", "job", cleanupJobName, "node", nodeName, "snapshotPath", snapshotPath)
+		} else {
+			klog.InfoS("Cleanup job for snapshot created", "job", cleanupJobName, "node", nodeName, "snapshotPath", snapshotPath)
+			if waitErr := util.WaitForJobCompletion(ctx, cs.goClient, cs.namespace, cleanupJobName); waitErr != nil {
+				klog.ErrorS(waitErr, "Cleanup job for snapshot failed", "job", cleanupJobName)
+			} else {
+				klog.InfoS("Cleanup job for snapshot completed successfully", "job", cleanupJobName)
+			}
+		}
+
+		return nil, status.Errorf(codes.Internal, "Snapshot Creation failed: %v", err)
+	}
+
+	klog.InfoS("Snapshot job completed successfully", "job", jobName)
+
+	return &csi.CreateSnapshotResponse{
+		Snapshot: &csi.Snapshot{
+			SnapshotId:     snapshotName,
+			SourceVolumeId: req.SourceVolumeId,
+			CreationTime:   timestamppb.Now(),
+			ReadyToUse:     true,
+		},
+	}, nil
 }
 
 func (cs *ControllerService) DeleteSnapshot(ctx context.Context, req *csi.DeleteSnapshotRequest) (*csi.DeleteSnapshotResponse, error) {

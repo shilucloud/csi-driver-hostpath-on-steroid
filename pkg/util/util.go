@@ -16,6 +16,7 @@ import (
 	hposv1 "github.com/shilucloud/csi-driver-hostpath-on-steriod/pkg/apis/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/klog/v2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -271,4 +272,121 @@ func HasFinalizer(ctx context.Context, k8sClient client.Client, resourceName str
 
 	return false, nil
 
+}
+
+func DeleteImageJob(jobName, namespace, nodeName, imgPath string) *batchv1.Job {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: namespace,
+		},
+		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: Int32Ptr(60),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					NodeSelector: map[string]string{
+						"kubernetes.io/hostname": nodeName,
+					},
+					Containers: []corev1.Container{{
+						Name:    "cleanup",
+						Image:   "busybox",
+						Command: []string{"rm", "-f", imgPath},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "hpos-data",
+							MountPath: "/var/lib/hpos",
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name: "hpos-data",
+						VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/var/lib/hpos",
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+
+	return job
+}
+
+func CreateSnapshotJob(jobName, namespace, nodeName, imgPath, snapshotPath string) *batchv1.Job {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: namespace,
+		},
+		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: Int32Ptr(60),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					NodeSelector: map[string]string{
+						"kubernetes.io/hostname": nodeName,
+					},
+					Containers: []corev1.Container{{
+						Name:    "cleanup",
+						Image:   "busybox",
+						Command: []string{"cp", imgPath, snapshotPath},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "hpos-data",
+							MountPath: "/var/lib/hpos",
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name: "hpos-data",
+						VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/var/lib/hpos",
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+
+	return job
+}
+
+func DeleteSnapshotJob(jobName, namespace, nodeName, snapshotPath string) *batchv1.Job {
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      jobName,
+			Namespace: namespace,
+		},
+		Spec: batchv1.JobSpec{
+			TTLSecondsAfterFinished: Int32Ptr(60),
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					RestartPolicy: corev1.RestartPolicyNever,
+					NodeSelector: map[string]string{
+						"kubernetes.io/hostname": nodeName,
+					},
+					Containers: []corev1.Container{{
+						Name:    "cleanup",
+						Image:   "busybox",
+						Command: []string{"rm", "-f", snapshotPath},
+						VolumeMounts: []corev1.VolumeMount{{
+							Name:      "hpos-data",
+							MountPath: "/var/lib/hpos",
+						}},
+					}},
+					Volumes: []corev1.Volume{{
+						Name: "hpos-data",
+						VolumeSource: corev1.VolumeSource{
+							HostPath: &corev1.HostPathVolumeSource{
+								Path: "/var/lib/hpos",
+							},
+						},
+					}},
+				},
+			},
+		},
+	}
+
+	return job
 }

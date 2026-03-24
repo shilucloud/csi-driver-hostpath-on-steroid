@@ -65,6 +65,11 @@ spec:
           hostPath:
             path: /var/lib/hpos
             type: DirectoryOrCreate
+
+        - name: hpos-snapshot-data
+          hostPath:
+            path: /var/lib/hpos/snapshots
+            type: DirectoryOrCreate
         
         - name: staging-dir 
           hostPath:

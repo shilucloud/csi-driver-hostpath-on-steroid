@@ -24,3 +24,27 @@ func (in *HPOSVolumeList) DeepCopyObject() runtime.Object {
 	}
 	return out
 }
+
+// snapshot types
+
+func (in *HPOSSnapshot) DeepCopyObject() runtime.Object {
+	if in == nil {
+		return nil
+	}
+	out := new(HPOSSnapshot)
+	*out = *in
+	return out
+}
+
+func (in *HPOSSnapshotList) DeepCopyObject() runtime.Object {
+	if in == nil {
+		return nil
+	}
+	out := new(HPOSSnapshotList)
+	*out = *in
+	if in.Items != nil {
+		out.Items = make([]HPOSSnapshot, len(in.Items))
+		copy(out.Items, in.Items)
+	}
+	return out
+}
